@@ -32,6 +32,9 @@
 = VARIABLES =
 
 PHD_VAR_env_password
+PHD_VAR_network_clock
+PHD_VAR_network_internal
+PHD_VAR_secrets_fence_xvm
 
 #################################
 # Scenario Requirements Section #
@@ -47,8 +50,16 @@ nodes: 1
 target=all
 ....
 
+yum install -y http://rhos-release.virt.bos.redhat.com/repos/rhos-release/rhos-release-latest.noarch.rpm
+
+rhos-release 7
+
+wget -O /etc/yum.repos.d/test.repo http://www.kronosnet.org/testrepo/test.repo
+
+yum update -y
+
 # install the packages
-yum install -y pcs pacemaker corosync fence-agents-all resource-agents nfs-utils ntp ntpdate
+yum install -y pcs pacemaker corosync fence-agents-all resource-agents
 
 # enable pcsd
 systemctl enable pcsd
@@ -68,28 +79,14 @@ echo $PHD_VAR_network_clock > /etc/ntp/step-tickers
 #sync_to_hardware clock
 echo "SYNC_HWCLOCK=yes" >> /etc/sysconfig/ntpdate
 
-systemctl ntpdate enable
-systemctl ntpdate start
+systemctl enable ntpdate
+systemctl start ntpdate
 
-systemctl ntpd enable
-systemctl ntpd start
+systemctl enable ntpd
+systemctl start ntpd
 
 # set a password for hacluster user. password should be the same on all nodes
 echo ${PHD_VAR_env_password} | passwd --stdin hacluster
-....
-
-
-
-
-
-target=all
-....
-# Unfortunately https://bugzilla.redhat.com/show_bug.cgi?id=1175005
-# prevents NFS mounts from succeeding by default prior to a reboot
-
-systemctl daemon-reload
-systemctl start rpcbind.service
-systemctl start rpc-statd.service
 
 # Now mount /srv so that we can use $PHD_VAR_osp_configdir further down
 
@@ -100,17 +97,11 @@ else
     echo "${PHD_VAR_network_internal}.1:/srv       /srv                    nfs     defaults,v3     0 0" >> /etc/fstab
     mount /srv
 fi
-....
 
-target=all
-....
 # Set up the authkey
-if [ ! -e $PHD_VAR_osp_configdir/fence_xvm.key ]; then
-    echo $(openssl rand -hex 10) > $PHD_VAR_osp_configdir/fence_xvm.key
-fi
-
 mkdir -p /etc/cluster
-cp $PHD_VAR_osp_configdir/fence_xvm.key /etc/cluster/fence_xvm.key
+echo ${PHD_VAR_secrets_fence_xvm} > /etc/cluster/fence_xvm.key
+
 ....
 
 target=$PHD_ENV_nodes1
@@ -129,10 +120,10 @@ pcs cluster auth $short_nodes -u hacluster -p ${PHD_VAR_env_password} --force
 pcs cluster setup --force --name $(echo $PHD_ENV_nodes1 | sed -e s/[0-9]//g -e s/\\..*//g )  ${short_nodes}
 pcs cluster enable --all
 pcs cluster start --all
-....
 
-target=$PHD_ENV_nodes1
-....
+# Give the cluster a moment to come up
+sleep 5
+
 # Assumes bare metal nodes are:
 # - named with a trailing offset
 # - numbered sequentially
@@ -145,4 +136,13 @@ target=$PHD_ENV_nodes1
 pcs stonith create fence1 fence_xvm multicast_address=225.0.0.2
 pcs stonith create fence2 fence_xvm multicast_address=225.0.0.3
 pcs stonith create fence3 fence_xvm multicast_address=225.0.0.4
+
+# For clones this is not so important
+#
+# However we really don't wan't VIPs moving around as it can cause
+# fencing to fail (eg. if vip-db is stopped, then keystone won't
+# function and we can't confirm if nova recognized the compute node is
+# down)
+pcs resource defaults resource-stickiness=INFINITY
+
 ....

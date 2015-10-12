@@ -30,6 +30,8 @@
 
 PHD_VAR_network_internal
 PHD_VAR_deployment
+PHD_VAR_components
+PHD_VAR_osp_major
 
 #################################
 # Scenario Requirements Section #
@@ -76,7 +78,7 @@ EOF
 cat >> /etc/haproxy/haproxy.cfg << EOF
 frontend vip-db
     bind ${PHD_VAR_network_internal}.201:3306
-    timeout client 90s
+    timeout client 90m
     default_backend db-vms-galera
 
 frontend vip-qpid
@@ -164,12 +166,13 @@ backend qpid-vms
 
 backend db-vms-galera
     option httpchk
-    stick-table type ip size 2
+    option tcpka
+    stick-table type ip size 1000
     stick on dst
-    timeout server 90s
-    server rdo${PHD_VAR_osp_major}-db1 ${PHD_VAR_network_internal}.58:3306 check inter 1s port 9200 on-marked-down shutdown-sessions
-    server rdo${PHD_VAR_osp_major}-db2 ${PHD_VAR_network_internal}.59:3306 check inter 1s port 9200 on-marked-down shutdown-sessions
-    server rdo${PHD_VAR_osp_major}-db3 ${PHD_VAR_network_internal}.60:3306 check inter 1s port 9200 on-marked-down shutdown-sessions
+    timeout server 90m
+    server rdo${PHD_VAR_osp_major}-db1 ${PHD_VAR_network_internal}.58:3306 check inter 1s port 9200 backup on-marked-down shutdown-sessions
+    server rdo${PHD_VAR_osp_major}-db2 ${PHD_VAR_network_internal}.59:3306 check inter 1s port 9200 backup on-marked-down shutdown-sessions
+    server rdo${PHD_VAR_osp_major}-db3 ${PHD_VAR_network_internal}.60:3306 check inter 1s port 9200 backup on-marked-down shutdown-sessions
 
 backend rabbitmq-vms
     option srvtcpka
@@ -193,7 +196,7 @@ fi
 
 target=$PHD_ENV_nodes1
 ....
-pcs resource create lb-haproxy systemd:haproxy op monitor start-delay=10s --clone
+pcs resource create lb-haproxy systemd:haproxy --clone
 
 
 # The VIPs changed recently 

@@ -1,5 +1,9 @@
 . ${PHD_VAR_env_configdir}/keystonerc_admin
 
-glance image-create --name "cirros" --is-public true --disk-format qcow2  --container-format bare --location http://download.cirros-cloud.net/0.3.2/cirros-0.3.2-x86_64-disk.img
+if [ ! -f ${PHD_VAR_env_configdir}/cirros-0.3.2-x86_64-disk.img ]; then
+	wget -O ${PHD_VAR_env_configdir}/cirros-0.3.2-x86_64-disk.img http://download.cirros-cloud.net/0.3.2/cirros-0.3.2-x86_64-disk.img
+fi
 
-glance image-list
+openstack image create --container-format bare --disk-format qcow2 --public --file ${PHD_VAR_env_configdir}/cirros-0.3.2-x86_64-disk.img cirros
+
+openstack image list

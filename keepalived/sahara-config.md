@@ -5,10 +5,12 @@ Introduction
 
 The following commands will be executed on all controller nodes, unless otherwise stated.
 
+You can find a phd scenario file [here](phd-setup/sahara.scenario).
+
 Install software
 ----------------
 
-    yum install -y openstack-sahara-api openstack-sahara-engine openstack-sahara-common openstack-sahara
+    yum install -y openstack-sahara-api openstack-sahara-engine openstack-sahara-common openstack-sahara python-saharaclient
 
 Configure Sahara
 ----------------
@@ -37,6 +39,7 @@ Manage DB
 ---------
 
 On node 1:
+
     sahara-db-manage --config-file /etc/sahara/sahara.conf upgrade head
 
 
@@ -52,4 +55,9 @@ Start services, open firewall ports
 Testing
 -------
 
-Testing Sahara requires creating a specific virtual machine image, which is outside the scope of this document. You can find instructions on [the Sahara wiki](http://docs.openstack.org/developer/sahara/devref/quickstart.html#upload-an-image-to-the-image-service).
+On node 1, run the following commands to test the Sahara API:
+
+    . /root/keystonerc_admin
+    sahara plugin-list
+
+Further Sahara testing requires creating a specific virtual machine image, which is outside the scope of this document. You can find instructions on [the Sahara wiki](http://docs.openstack.org/developer/sahara/devref/quickstart.html#upload-an-image-to-the-image-service).

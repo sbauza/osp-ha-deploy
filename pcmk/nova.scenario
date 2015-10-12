@@ -29,6 +29,10 @@ nodes: 1
 
 PHD_VAR_deployment
 PHD_VAR_network_domain
+PHD_VAR_network_hosts_gateway
+PHD_VAR_network_hosts_memcache
+PHD_VAR_network_hosts_rabbitmq
+PHD_VAR_network_internal
 
 ######################
 # Deployment Scripts #
@@ -38,13 +42,10 @@ PHD_VAR_network_domain
 target=all
 ....
 yum install -y openstack-nova-console openstack-nova-novncproxy openstack-utils openstack-nova-api openstack-nova-conductor openstack-nova-scheduler python-cinderclient python-memcached
-....
-
-target=all
-....
 
 openstack-config --set /etc/nova/nova.conf oslo_messaging_rabbit rabbit_hosts ${PHD_VAR_network_hosts_rabbitmq}
 openstack-config --set /etc/nova/nova.conf oslo_messaging_rabbit rabbit_ha_queues true
+openstack-config --set /etc/nova/nova.conf oslo_messaging_rabbit heartbeat_timeout_threshold 60
 openstack-config --set /etc/nova/nova.conf DEFAULT memcached_servers ${PHD_VAR_network_hosts_memcache}
 
 
@@ -77,6 +78,13 @@ openstack-config --set /etc/nova/nova.conf neutron admin_auth_url http://vip-key
 openstack-config --set /etc/nova/nova.conf DEFAULT firewall_driver nova.virt.firewall.NoopFirewallDriver
 openstack-config --set /etc/nova/nova.conf DEFAULT libvirt_vif_driver nova.virt.libvirt.vif.LibvirtHybridOVSBridgeDriver
 
+
+# those entries were workaround for https://bugs.launchpad.net/neutron/+bug/1464178
+# that breaks neutron and evacuation
+# openstack-config --set /etc/nova/nova.conf DEFAULT notify_api_faults False
+# openstack-config --set /etc/nova/nova.conf DEFAULT vif_plugging_is_fatal True
+# openstack-config --set /etc/nova/nova.conf DEFAULT vif_plugging_timeout 300
+
 openstack-config --set /etc/nova/nova.conf conductor use_local false
 
 openstack-config --set /etc/nova/nova.conf database connection mysql://nova:novatest@vip-db/nova
@@ -93,15 +101,12 @@ openstack-config --set /etc/nova/api-paste.ini filter:authtoken admin_password n
 target=$PHD_ENV_nodes1
 ....
 su nova -s /bin/sh -c "nova-manage db sync"
-....
 
-target=$PHD_ENV_nodes1
-....
-pcs resource create nova-consoleauth systemd:openstack-nova-consoleauth  op monitor start-delay=10s --clone
-pcs resource create nova-novncproxy systemd:openstack-nova-novncproxy op monitor start-delay=10s --clone
-pcs resource create nova-api systemd:openstack-nova-api op monitor start-delay=10s --clone
-pcs resource create nova-scheduler systemd:openstack-nova-scheduler op monitor start-delay=10s --clone
-pcs resource create nova-conductor systemd:openstack-nova-conductor op monitor start-delay=10s --clone
+pcs resource create nova-consoleauth systemd:openstack-nova-consoleauth --clone interleave=true
+pcs resource create nova-novncproxy systemd:openstack-nova-novncproxy --clone interleave=true
+pcs resource create nova-api systemd:openstack-nova-api --clone interleave=true
+pcs resource create nova-scheduler systemd:openstack-nova-scheduler --clone interleave=true
+pcs resource create nova-conductor systemd:openstack-nova-conductor --clone interleave=true
 
 pcs constraint order start nova-consoleauth-clone then nova-novncproxy-clone
 pcs constraint colocation add nova-novncproxy-clone with nova-consoleauth-clone

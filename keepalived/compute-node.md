@@ -7,6 +7,8 @@ The compute node implementation is relatively straightforward, compared to the c
 -   Nova compute
 -   Ceilometer compute agent
 
+You can find a phd scenario file [here](phd-setup/compute.scenario).
+
 Environment description
 -----------------------
 
@@ -47,7 +49,7 @@ The following commands should be executed on each compute node to be added to th
     openstack-config --set /etc/nova/nova.conf glance host controller-vip.example.com
     openstack-config --set /etc/nova/nova.conf DEFAULT network_api_class nova.network.neutronv2.api.API
     openstack-config --set /etc/nova/nova.conf DEFAULT firewall_driver nova.virt.firewall.NoopFirewallDriver
-    openstack-config --set /etc/nova/nova.conf DEFAULT libvirt_vif_driver nova.virt.libvirt.vif.LibvirtHybridOVSBridgeDriver
+    openstack-config --set /etc/nova/nova.conf libvirt vif_driver nova.virt.libvirt.vif.LibvirtGenericVIFDriver
     openstack-config --set /etc/nova/nova.conf DEFAULT security_group_api neutron
     openstack-config --set /etc/nova/nova.conf cinder cinder_catalog_info volume:cinder:internalURL
     openstack-config --set /etc/nova/nova.conf conductor use_local false

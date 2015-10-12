@@ -28,6 +28,8 @@ nodes: 1
 = VARIABLES =
 
 PHD_VAR_deployment
+PHD_VAR_network_hosts_memcache
+PHD_VAR_network_hosts_rabbitmq
 
 ######################
 # Deployment Scripts #
@@ -37,10 +39,7 @@ PHD_VAR_deployment
 target=all
 ....
 yum install -y openstack-heat-engine openstack-heat-api openstack-heat-api-cfn openstack-heat-api-cloudwatch python-heatclient openstack-utils python-glanceclient
-....
 
-target=all
-....
 openstack-config --set /etc/heat/heat.conf database connection mysql://heat:heattest@vip-db/heat
 openstack-config --set /etc/heat/heat.conf database database max_retries -1
 
@@ -56,6 +55,7 @@ openstack-config --set /etc/heat/heat.conf ec2authtoken auth_uri http://vip-keys
 openstack-config --set /etc/heat/heat.conf DEFAULT memcache_servers   ${PHD_VAR_network_hosts_memcache}
 openstack-config --set /etc/heat/heat.conf oslo_messaging_rabbit rabbit_hosts ${PHD_VAR_network_hosts_rabbitmq}
 openstack-config --set /etc/heat/heat.conf oslo_messaging_rabbit rabbit_ha_queues true
+openstack-config --set /etc/heat/heat.conf oslo_messaging_rabbit heartbeat_timeout_threshold 60
 
 
 openstack-config --set /etc/heat/heat.conf heat_api bind_host $(ip addr show dev eth1 scope global | grep dynamic| sed -e 's#.*inet ##g' -e 's#/.*##g')
@@ -77,10 +77,7 @@ openstack-config --set /etc/heat/heat.conf DEFAULT enable_cloud_watch_lite false
 target=$PHD_ENV_nodes1
 ....
 su heat -s /bin/sh -c "heat-manage db_sync"
-....
 
-target=$PHD_ENV_nodes1
-....
 pcs resource create heat-api systemd:openstack-heat-api --clone interleave=true
 pcs resource create heat-api-cfn systemd:openstack-heat-api-cfn  --clone interleave=true
 pcs resource create heat-api-cloudwatch systemd:openstack-heat-api-cloudwatch --clone interleave=true

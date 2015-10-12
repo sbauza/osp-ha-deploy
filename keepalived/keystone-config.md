@@ -3,6 +3,8 @@ Introduction
 
 The following commands will be executed on all controller nodes, unless otherwise stated.
 
+You can find a phd scenario file [here](phd-setup/keystone.scenario).
+
 Install software
 ----------------
 
@@ -125,6 +127,15 @@ On nodes 2 and 3:
     tar xvfz /tmp/keystone_ssl.tgz 
     chown -R keystone:keystone /var/log/keystone /etc/keystone/ssl/
     restorecon -Rv /etc/keystone/ssl
+    touch /var/log/keystone/keystone.log
+    chown keystone:keystone /var/log/keystone/keystone.log
+
+Create cron job to flush expired tokens
+---------------------------------------
+
+On all nodes:
+
+    echo "1 * * * * keystone keystone-manage token_flush >>/var/log/keystone/keystone-tokenflush.log 2>&1" >> /etc/crontab
 
 Start services and open firewall ports
 --------------------------------------

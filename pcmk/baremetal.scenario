@@ -53,13 +53,35 @@ nodes: 9
 target=all
 ....
 
-yum install -y http://rhos-release.virt.bos.redhat.com/repos/rhos-release/rhos-release-latest.noarch.rpm
+yum install -y http://rhos-release.virt.bos.redhat.com/repos/rhos-release/rhos-release-latest.noarch.rpm wget
 
 rhos-release 7
 
+wget -O /etc/yum.repos.d/test.repo http://www.kronosnet.org/testrepo/test.repo
+
 yum clean all
 yum update -y
-yum install -y pacemaker fence-agents resource-agents pcs libvirt qemu-kvm bind-utils net-tools tcpdump
+
+# ntpd conflicts with chrony
+yum erase -y chrony
+rm -f /etc/chrony*
+
+yum install -y pacemaker fence-agents resource-agents pcs libvirt qemu-kvm bind-utils net-tools tcpdump ntp ntpdate sos nfs-utils
+
+# The cluster shouldn't need NTP configured, but without it the
+# network goes bye-bye when using DHCP
+#
+# Must point to clock.redhat.com to work internally
+sed -i s/^server.*// /etc/ntp.conf
+echo "server $PHD_VAR_network_clock iburst" >> /etc/ntp.conf
+echo $PHD_VAR_network_clock > /etc/ntp/step-tickers
+
+#sync_to_hardware clock
+echo "SYNC_HWCLOCK=yes" >> /etc/sysconfig/ntpdate
+
+systemctl enable ntpdate
+
+systemctl enable ntpd
 
 sed -i -e 's/=enforcing/=disabled/g' /etc/sysconfig/selinux
 sed -i -e 's/=enforcing/=disabled/g' /etc/selinux/config
@@ -70,10 +92,7 @@ systemctl enable libvirtd
 systemctl start libvirtd
 virsh net-destroy default
 virsh net-undefine default
-....
 
-target=all
-....
 lastoct="$(hostname -s | sed -e 's#^[a-z]*-##g' -e 's#^0*##g')"
 
 cat > /etc/sysconfig/network-scripts/ifcfg-ext0 << EOF
@@ -133,19 +152,7 @@ fi
 echo "echo 1 > /sys/class/net/ext0/bridge/multicast_querier" >> /etc/rc.d/rc.local
 echo "echo 1 > /sys/class/net/vmnet0/bridge/multicast_querier" >> /etc/rc.d/rc.local
 chmod +x /etc/rc.d/rc.local
-....
 
-# Optional if /home is huge and /root is tiny
-
-target=all
-....
-# in rhel7 we need to make this a two stage commit
-# since there are daemons that can hold locks on mountpoint
-sed -i -e 's#.*home.*##g' /etc/fstab 
-....
-
-target=all
-....
 # Turn off auto-generation of resolv.conf so we can override it 
 # make a backup that we will need for gateway scenario otherwise
 # we have a catch 22
@@ -154,6 +161,29 @@ cp /etc/resolv.conf /etc/resolv.conf.backup
 echo PEERDNS=no >> /etc/sysconfig/network-scripts/ifcfg-ext0
 echo search vmnet.${PHD_VAR_network_domain} ${PHD_VAR_network_domain} > /etc/resolv.conf
 echo nameserver ${PHD_VAR_network_internal}.1 >> /etc/resolv.conf
+
+# get rid of /home from beaker
+sed -i -e 's#.*home.*##g' /etc/fstab
+umount /home
+
+# remove home lv
+lvremove -f /dev/mapper/*home
+
+# expand root lv to 50% vg
+lvresize -f -l50%VG /dev/mapper/*root
+
+# expand root fs
+xfs_growfs /dev/mapper/*-root
+
+# create the snapshot
+lvcreate -s -n baremetal_snap -l100%FREE /dev/mapper/*root
+
+# regenerate initramfs to include dm-snapshot modules/utils
+for i in $(ls /boot/vmlinuz-*x86*); do
+	ver=$(basename $i | sed -e 's#vmlinuz-##g')
+	dracut -f --kver $ver
+done
+
 ....
 
 # Implied by the reboot below
@@ -166,16 +196,12 @@ echo nameserver ${PHD_VAR_network_internal}.1 >> /etc/resolv.conf
 target=local
 ....
 # Reboot each node and wait for it to return
+
+# disable set -e when calling phd_cmd_* because
+# phd doesn't manage all return codes properly
+set +e
 for node in $(echo $PHD_ENV_nodes); do
     phd_cmd_exec "reboot > /dev/null 2>&1" "$node"
-    phd_wait_connection 600 $node
-    phd_cmd_exec "uptime" "$node"
+    phd_wait_connection 2400 $node || exit 1
 done
-....
-
-target=all
-....
-lvremove -f /dev/mapper/*home
-lvresize -f -l+100%FREE /dev/mapper/*root
-xfs_growfs /dev/mapper/*-root
 ....

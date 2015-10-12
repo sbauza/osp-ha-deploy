@@ -29,6 +29,7 @@
 = VARIABLES =
 
 PHD_VAR_osp_major
+PHD_VAR_components
 PHD_VAR_network_domain
 PHD_VAR_network_internal
 PHD_VAR_network_nic_base
@@ -38,7 +39,6 @@ PHD_VAR_network_nic_base
 #################################
 = REQUIREMENTS =
 nodes: 1
-packages=yum
 
 ######################
 # Deployment Scripts #
@@ -48,30 +48,22 @@ packages=yum
 target=$PHD_ENV_nodes1
 ....
 # temporary restore original resolv.conf
-rm -f /etc/resolv.conf.new
-cp /etc/resolv.conf /etc/resolv.conf.new
-rm -f /etc/resolv.conf
-cp /etc/resolv.conf.backup /etc/resolv.conf
-....
+if [ -e /etc/resolv.conf.backup ]; then
+    rm -f /etc/resolv.conf.new
+    cp /etc/resolv.conf /etc/resolv.conf.new
+    rm -f /etc/resolv.conf
+    cp /etc/resolv.conf.backup /etc/resolv.conf
+fi
 
-target=$PHD_ENV_nodes1
-....
-yum install -y nfs-utils
 echo "/srv ${PHD_VAR_network_internal}.0/255.255.255.0(rw,sync,no_root_squash,subtree_check,fsid=10)" > /etc/exports
 systemctl enable nfs-server
 systemctl start nfs-server
-....
 
-target=$PHD_ENV_nodes1
-....
 ext_ip=$(host $PHD_ENV_nodes1 | awk '{print $4}')
 echo "ext: $ext_ip"
 iptables -t nat -A POSTROUTING -s ${PHD_VAR_network_internal}.0/24 -o ext0 -j SNAT --to-source ${ext_ip}
 echo "iptables -t nat -A POSTROUTING -s ${PHD_VAR_network_internal}.0/24 -o ext0 -j SNAT --to-source ${ext_ip}" >> /etc/rc.local
-....
 
-target=$PHD_ENV_nodes1
-....
 yum install -y haproxy
 
 ext_ip=$(host $PHD_ENV_nodes1 | awk '{print $4}')
@@ -102,10 +94,7 @@ EOF
 
 systemctl enable haproxy
 systemctl start haproxy
-....
 
-target=$PHD_ENV_nodes1
-....
 yum install -y bind
 sed -i -e 's#127.0.0.1#any#g' -e 's#::1#any#g' -e 's#allow-query#//allow-query#g' /etc/named.conf 
 sed -i -e 's#dnssec-enable yes;#dnssec-enable no;#g' -e 's#dnssec-validation yes;#dnssec-validation no;#g' /etc/named.conf 
@@ -213,10 +202,7 @@ chmod 750 /etc/named
 chmod 640 /etc/named/*
 systemctl enable named
 systemctl start named
-....
 
-target=$PHD_ENV_nodes1
-....
 yum install -y dhcp
 
 echo "DHCDPARGS=vmnet0" > /etc/sysconfig/dhcpd
@@ -262,7 +248,38 @@ systemctl enable dhcpd
 systemctl start dhcpd
 
 # restore resolve.conf now that we can use it
-rm -f /etc/resolv.conf
-cp /etc/resolv.conf.new /etc/resolv.conf
-rm -f /etc/resolv.conf.new
+if [ -e /etc/resolv.conf.new ]; then
+    rm -f /etc/resolv.conf
+    cp /etc/resolv.conf.new /etc/resolv.conf
+    rm -f /etc/resolv.conf.new
+fi
 ....
+
+target=local
+....
+# Reboot each node and wait for it to return
+
+# disable set -e when calling phd_cmd_* because
+# phd doesn't manage all return codes properly
+set +e
+for node in $(echo $PHD_ENV_nodes); do
+     phd_cmd_exec "reboot > /dev/null 2>&1" "$node"
+     phd_wait_connection 2400 $node || exit 1
+done
+....
+
+target=all
+....
+
+if grep -q srv /etc/exports; then
+   echo "We are on the nfs-server"
+   exit 0
+fi
+
+if grep -q srv /etc/fstab; then
+    echo /srv is already mounted;
+else
+    mkdir -p /srv
+    echo "${PHD_VAR_network_internal}.1:/srv       /srv                    nfs     defaults,v3     0 0" >> /etc/fstab
+    mount /srv
+fi

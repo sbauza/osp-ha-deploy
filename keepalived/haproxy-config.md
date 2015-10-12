@@ -5,6 +5,8 @@ A load-balancing proxy is used to provide scalability and load balancing for Ope
 
 The following commands will be executed on all controller nodes.
 
+You can find a phd scenario file [here](phd-setup/lb.scenario).
+
 Install packages
 ----------------
 
@@ -46,12 +48,12 @@ Configure HAProxy
         default_backend db-vms-galera
     backend db-vms-galera
         option httpchk
-        stick-table type ip size 2
+        stick-table type ip size 1000
         stick on dst
         timeout server 90m
-        server rhos7-node1 192.168.1.221:3306 check inter 1s port 9200 on-marked-down shutdown-sessions
-        server rhos7-node2 192.168.1.222:3306 check inter 1s port 9200 on-marked-down shutdown-sessions
-        server rhos7-node3 192.168.1.223:3306 check inter 1s port 9200 on-marked-down shutdown-sessions
+        server rhos7-node1 192.168.1.221:3306 check inter 1s port 9200 backup on-marked-down shutdown-sessions
+        server rhos7-node2 192.168.1.222:3306 check inter 1s port 9200 backup on-marked-down shutdown-sessions
+        server rhos7-node3 192.168.1.223:3306 check inter 1s port 9200 backup on-marked-down shutdown-sessions
 
     # Note the RabbitMQ entry is only needed for CloudForms compatibility
     # and should be removed in the future
